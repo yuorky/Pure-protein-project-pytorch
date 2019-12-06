@@ -12,6 +12,10 @@ class Proteins(data.Dataset):
         #这里不实际加载图片，只是指定路径
         self.imgs = [os.path.join(root, img) for img in imgs]
         self.transforms = transforms
+        labels = []
+        for i in range(len(self.imgs)):
+            labels.append(1 if "AB-40" in imgs[i].split('/')[-1] else 0)
+        self.labels = labels
 
     def __len__(self):
         'Denotes the total number of samples'
@@ -21,9 +25,12 @@ class Proteins(data.Dataset):
         'Generate one sample of data'
         img_path = self.imgs[index]
         # AB-40 -> "AB-40"; Alpha-syn -> "Alpha-syn"
-        label = "AB-40" if "AB-40" in img_path.split('/')[-1] else "Alpha-syn"
+        label = 1 if "AB-40" in img_path.split('/')[-1] else 0
         data = Image.open(img_path)
         if self.transforms:
             data = self.transforms(data)
         return data, label
+
+
+
 
