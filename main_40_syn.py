@@ -6,8 +6,9 @@
 # %% import the packages
 import numpy as np
 import pandas as pd
-import matplotlib as plt
+import matplotlib.pyplot as plt
 import torch
+import torchvision
 import torch.nn as nn
 from torch.optim import lr_scheduler
 from torchvision import transforms as T
@@ -25,6 +26,11 @@ import copy
 def return_labels_idx(labels):
     return [i for i in range(labels.shape[0]) if labels[i] == 'AB-40' or labels[i] == 'Alpha-syn']
 
+def imshow(img):
+    img = img/2 + 0.5   # unnormlize
+    npimg = img.numpy()
+    plt.imshow(np.transpose(npimg,(1,2,0)))
+    plt.show()
 
 # %% load the data
 dbtpath = "E:\\Polarimetry Database\\Pure Proteins\\dbt_633nm.csv"
@@ -62,7 +68,6 @@ test_loader = DataLoader(all_dataset, batch_size=opt.batch_size, sampler=test_sa
 # %% Training
 def train_model(model, criterion, optimizer, scheduler, num_epochs=25,train_loader=train_loader):
     since = time.time()
-    best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
 
     for epoch in range(num_epochs):
@@ -100,14 +105,12 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25,train_load
 
             scheduler.step()
 
+        epoch_loss = running_loss/train_loader.sampler.indices.shape[0]
+        epoch_acc = running_corrects.double()/train_loader.sampler.indices.shape[0]
+
         print('{} Loss: {: .4f} Acc: {: .4f}'.format(
             'Train', epoch_loss, epoch_acc
         ))
-
-            # deep copy the model
-            if phase == 'val' and epoch_acc > best_acc:
-                best_acc = epoch_acc
-                best_model_wts = copy.deepcopy(model.state_dict())
 
         print()
 
@@ -116,10 +119,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25,train_load
         time_elapsed // 60, time_elapsed % 60
     ))
 
-    print('Best val Acc:{:4f}'.format(best_acc))
-
     # load best model weights
-    model.load_state_dict(best_model_wts)
     return model
 
 #%% Visualizing the model predictions
@@ -169,6 +169,29 @@ scheduler = lr_scheduler.StepLR(optimizer_AB40_SYN,
 
 resnet101_AB40_SYN = train_model(model_AB40_SYN,criterion,
                                        optimizer_AB40_SYN,scheduler,
-                                       num_epochs=25)
+                                       num_epochs=30)
 
+#%% Test the network
+test_iter = iter(test_loader)
+imagesaa, labelsaa = test_iter.next()
+
+# print images
+imshow(torchvision.utils.make_grid(imagesaa))
+
+def test(test_loader=test_loader, model=resnet101_AB40_SYN):
+
+    test_corrects = 0
+
+    for inputs, labels in test_loader:
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+
+        outputs = model(inputs)
+        _, preds = torch.max(outputs, 1)  # 1 is the dimension
+
+        test_corrects += torch.sum(preds == labels.data)
+
+    test_acc = test_corrects.double()/test_loader.sampler.indices.shape[0]
+
+    return test_corrects, test_acc
 
