@@ -11,6 +11,7 @@ import torch
 import torchvision
 import torch.nn as nn
 from torch.optim import lr_scheduler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision import transforms as T
 from torch.utils.data import SubsetRandomSampler as SRS
 from torch.utils.data import DataLoader
@@ -26,11 +27,13 @@ import copy
 def return_labels_idx(labels):
     return [i for i in range(labels.shape[0]) if labels[i] == 'AB-40' or labels[i] == 'Alpha-syn']
 
+
 def imshow(img):
-    img = img/2 + 0.5   # unnormlize
+    img = img / 2 + 0.5  # unnormlize
     npimg = img.numpy()
-    plt.imshow(np.transpose(npimg,(1,2,0)))
+    plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
+
 
 # %% load the data
 dbtpath = "E:\\Polarimetry Database\\Pure Proteins\\dbt_633nm.csv"
@@ -44,12 +47,12 @@ label_AB40_SYN = [label_633nm[i] for i in AB40_SYN_idx]
 opt = DefaultConfig()
 
 transform = T.Compose([
-    T.Resize((224,224)),
+    T.Resize((224, 224)),
     T.ToTensor(),
     T.Normalize(mean=[.5, .5, .5], std=[.5, .5, .5])
 ])
 
-all_dataset = Proteins(root=opt.root,transforms=transform)
+all_dataset = Proteins(root=opt.root, transforms=transform)
 
 # split training and test set 7:3
 train_idx, test_idx = train_test_split(
@@ -60,22 +63,20 @@ train_idx, test_idx = train_test_split(
 
 train_sampler = SRS(train_idx)
 test_sampler = SRS(test_idx)
-train_loader = DataLoader(all_dataset, batch_size=opt.batch_size, sampler=train_sampler)
-test_loader = DataLoader(all_dataset, batch_size=opt.batch_size, sampler=test_sampler)
-
+train_loader = DataLoader(all_dataset, batch_size=10, sampler=train_sampler)
+test_loader = DataLoader(all_dataset, batch_size=10, sampler=test_sampler)
 
 
 # %% Training
-def train_model(model, criterion, optimizer, scheduler, num_epochs=25,train_loader=train_loader):
+def train_model(model, criterion, optimizer, scheduler, num_epochs=25, train_loader=train_loader):
     since = time.time()
-    best_acc = 0.0
 
     for epoch in range(num_epochs):
         print('Epoch {}{}'.format(epoch, num_epochs - 1))
         print('-' * 10)
 
         # Each epoch has a training and validation phase
-        model.train()       # Set model to training mode
+        model.train()  # Set model to training mode
 
         running_loss = 0.0
         running_corrects = 0
@@ -92,7 +93,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25,train_load
             # track history if only in train
             with torch.set_grad_enabled(True):
                 outputs = model(inputs)
-                _, preds = torch.max(outputs, 1) # 1 is the dimension
+                _, preds = torch.max(outputs, 1)  # 1 is the dimension
                 loss = criterion(outputs, labels)
 
                 # backward + optimize
@@ -103,16 +104,15 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25,train_load
             running_loss += loss.item() * inputs.size(0)
             running_corrects += torch.sum(preds == labels.data)
 
-            scheduler.step()
+        # Decay learning rate
 
-        epoch_loss = running_loss/train_loader.sampler.indices.shape[0]
-        epoch_acc = running_corrects.double()/train_loader.sampler.indices.shape[0]
+        epoch_loss = running_loss / train_loader.sampler.indices.shape[0]
+        epoch_acc = running_corrects.item() / train_loader.sampler.indices.shape[0]
 
         print('{} Loss: {: .4f} Acc: {: .4f}'.format(
             'Train', epoch_loss, epoch_acc
         ))
-
-        print()
+        scheduler.step()
 
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(
@@ -122,7 +122,8 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25,train_load
     # load best model weights
     return model
 
-#%% Visualizing the model predictions
+
+# %% Visualizing the model predictions
 #   Generic function to display predictions for a few images
 def visualize_model(model, num_images=6):
     was_training = model.training
@@ -140,7 +141,7 @@ def visualize_model(model, num_images=6):
 
             for j in range(inputs.size()[0]):
                 images_so_far += 1
-                ax = plt.subplot(num_images//2, 2, images_so_far)
+                ax = plt.subplot(num_images // 2, 2, images_so_far)
                 ax.axis('off')
                 ax.set_title('predicted: {}'.format(class_names[preds[j]]))
                 imshow(inputs.cpu().data[j])
@@ -149,6 +150,7 @@ def visualize_model(model, num_images=6):
                     model.train(mode=was_training)
                     return
         model.train(mode=was_training)
+
 
 # %% Finetuning the network
 # Models
@@ -167,19 +169,22 @@ optimizer_AB40_SYN = torch.optim.SGD(model_AB40_SYN.parameters(),
 scheduler = lr_scheduler.StepLR(optimizer_AB40_SYN,
                                 step_size=1, gamma=0.8)
 
-resnet101_AB40_SYN = train_model(model_AB40_SYN,criterion,
-                                       optimizer_AB40_SYN,scheduler,
-                                       num_epochs=30)
+scheduler_2 = ReduceLROnPlateau(optimizer_AB40_SYN, mode='max', factor=0.5,
+                                patience=1, verbose=True)
 
-#%% Test the network
+resnet101_AB40_SYN = train_model(model_AB40_SYN, criterion,
+                                 optimizer_AB40_SYN, scheduler,
+                                 num_epochs=30)
+
+# %% Test the network
 test_iter = iter(test_loader)
 imagesaa, labelsaa = test_iter.next()
 
 # print images
 imshow(torchvision.utils.make_grid(imagesaa))
 
-def test(test_loader=test_loader, model=resnet101_AB40_SYN):
 
+def test(test_loader=test_loader, model=resnet101_AB40_SYN):
     test_corrects = 0
 
     for inputs, labels in test_loader:
@@ -191,7 +196,6 @@ def test(test_loader=test_loader, model=resnet101_AB40_SYN):
 
         test_corrects += torch.sum(preds == labels.data)
 
-    test_acc = test_corrects.double()/test_loader.sampler.indices.shape[0]
+    test_acc = test_corrects.double() / test_loader.sampler.indices.shape[0]
 
     return test_corrects, test_acc
-
