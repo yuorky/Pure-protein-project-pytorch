@@ -20,6 +20,7 @@ from models import resnet101
 from sklearn.model_selection import train_test_split
 from config import DefaultConfig
 import time
+import os
 import copy
 
 
@@ -155,7 +156,7 @@ def visualize_model(model, num_images=6):
 # %% Finetuning the network
 # Models
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model_AB40_SYN = resnet101(pretrained=True)
+model_AB40_SYN = resnet101(pretrained=False)
 # The size of each output sample is set to 2
 num_in_ft = model_AB40_SYN.fc.in_features
 model_AB40_SYN.fc = nn.Linear(num_in_ft, 2)
@@ -176,6 +177,7 @@ resnet101_AB40_SYN = train_model(model_AB40_SYN, criterion,
                                  optimizer_AB40_SYN, scheduler,
                                  num_epochs=30)
 
+
 # %% Test the network
 test_iter = iter(test_loader)
 imagesaa, labelsaa = test_iter.next()
@@ -184,7 +186,7 @@ imagesaa, labelsaa = test_iter.next()
 imshow(torchvision.utils.make_grid(imagesaa))
 
 
-def test(test_loader=test_loader, model=resnet101_AB40_SYN):
+def test(model, test_loader=test_loader):
     test_corrects = 0
 
     for inputs, labels in test_loader:
@@ -199,3 +201,13 @@ def test(test_loader=test_loader, model=resnet101_AB40_SYN):
     test_acc = test_corrects.double() / test_loader.sampler.indices.shape[0]
 
     return test_corrects, test_acc
+
+#%% Save and load the model
+
+torch.save(resnet101_AB40_SYN.state_dict(), os.getcwd() + r'\saved models\resnet101_1.pth')
+
+
+def aa(model=resnet101_AB40_SYN):
+    for name, param in model.named_parameters():
+        print(name, " ", param)
+
